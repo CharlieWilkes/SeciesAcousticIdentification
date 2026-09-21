@@ -1,0 +1,109 @@
+install.packages("ggforce")
+install.packages("gridExtra")
+install.packages("vegan")
+install.packages("FSA")
+library(ggforce)
+library(gridExtra)
+library(vegan)
+library(FSA)
+#########################################################################################################################
+##Plot to show the clustered call groups in search for distinct call
+#########################################################################################################################
+
+
+cluster_data <- scale(Complete[, c("Fundamental.freq", "Bandwidth", "Duration")])## crates smaller datat frame of the 3 wanted columns
+clusters <- kmeans(cluster_data, centers = 3, nstart = 100)##calculate the sluster. asking for 3 different groups. runs the process 100 times for best fitting model
+Complete$call_type <- as.factor(clusters$cluster)##adds column to the completed dataset for what cluster each sound is in
+
+x1 <- table(Complete$cluster3, Complete$Species) ##creates table to show how many of each species is in which group
+x1 ##gives me the table
+
+
+##Plots the fundamental frequency against the duration with colours varying with bandwidth. add circles fto show where the groups lie in the data
+ggplot(Complete, aes(y = Duration, x = Fundamental.freq, shape = Species, colour = Bandwidth))+
+  geom_point(size = 2.5)+ #'sets the point size
+  scale_colour_gradient(low = "blue", high = "red")+##colours to show the different in bandwidt as a scale
+  stat_ellipse(aes(group = call_type, linetype = call_type),lty = 44, ##adds the circles from the determine clusters above
+               level = 0.95, linewidth = 1.2) +
+  labs(x = "Fundamental frequency (hz)", y = "Duration (s)")+
+  theme_bw()+                                    # removes grey background
+  theme(
+    panel.grid = element_blank(),                 # removes the gridlines
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)  # put line around the plot 
+  )
+
+
+
+#########################################################################################################################
+##PCA analysis
+#########################################################################################################################
+
+pca_data <- Complete[, c("Species", "Fundamental.freq", "Bandwidth", "Duration")] ## takes the wanted colums from the complete data set
+
+pca    <- prcomp(pca_data[,2:4], retx=T, scale.=T) ## scales the 3 variable to ensure each is analysed equally
+scores <- pca$x[,1:3]                        ## makes the pca data
+
+ggdata <- data.frame(scores, Species=pca_data$Species) ##makes a new data set with the socres and which species they were
+
+pca$rotation ## gives the influence each variable has one the pca axis
+summary (pca) ##variation explained by each variable
+
+##As scores are negative the data is flipped so the higher values on the pca are equal to increase in the variables
+scores[,"PC1"] <- -scores[,"PC1"]   
+scores[,"PC2"] <- -scores[,"PC2"]   
+
+##Plots the PCA using ggplot. adds 3 circles to show each species spread with dashed outlines
+ggplot(ggdata) +
+  geom_point(aes(x=PC1, y=PC2, color=factor(Species)), size=4, shape=20) +
+  stat_ellipse(aes(x=PC1,y=PC2,fill=factor(Species)),
+               geom="polygon", level=0.95, alpha=0.2) +
+  guides(color=guide_legend("Species"),fill=guide_legend("Species"))+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +   ##add line to show zero across
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +   ##add line to show zero going up
+  theme_bw() +                                    ## makes backgroud white
+  theme(
+    panel.grid = element_blank(),                 ## deletes gridlines
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)  # adds border for th eplot
+  )
+
+table(Complete$Species)## how many sounds were selected per species(how many times each species name appears)
+
+##################################################################################################################
+##Permanova test
+##################################################################################################################
+
+acoustic_vars <- scale(Complete[, c("Fundamental.freq", "Bandwidth", "Duration")]) ## selects the 3 wanted columns and scales them to make the equal
+
+adonis2(acoustic_vars ~ Species, data = Complete, method = "euclidean", permutations = 999) ## runs the permanova test using the euclidean method and runs 999 permutations
+
+##Test normality for the 3 variables as permanova is not normal
+shapiro.test(Complete$Fundamental.freq)
+shapiro.test(Complete$Bandwidth)
+shapiro.test(Complete$Duration)
+
+##################################################################################################################
+##Individual analysis of the different variables 
+##################################################################################################################
+
+#Fund freq vs speciess
+a1 <- aov(Fundamental.freq ~ Species, data = Complete) ## runs anova
+summary(a1) ## gives result
+shapiro.test(residuals(a1)) ##test normality of residuals
+a1 <- kruskal.test(Fundamental.freq ~ Species, data = Complete) ##not normal so kruskall wallace
+a1 ##results
+dunnTest(Fundamental.freq ~ Species, data = Complete, method = "bonferroni") ## significant krus-wall so pairwise dunns test
+
+#Bandwidth vs Species
+a2 <- aov(Bandwidth ~ Species, data = Complete) ## runs anova
+summary(a2) ## results
+shapiro.test(residuals(a2)) ## tests normlaity of residuals
+a2 <- kruskal.test(Bandwidth ~ Species, data = Complete) ## not normal so krus-wall
+a2 ##results
+
+##Duration vs species
+a3 <- aov(Duration ~ Species, data = Complete) ## runs anova
+summary(a3) ## gives results
+shapiro.test(residuals(a3)) ## tests normlity of residuals
+a3 <- kruskal.test(Duration ~ Species, data = Complete) ## not normal so kru-wall
+a3 ##results
+
