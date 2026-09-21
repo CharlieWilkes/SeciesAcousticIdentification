@@ -1,0 +1,92 @@
+install.packages("warbleR")
+install.packages("monitoR")
+install.packages("ohun")
+install.packages("stringr")
+install.packages("viridis")
+install.packages("forcats")
+
+library(ohun)
+library(warbleR)
+library(tuneR)
+library(seewave)
+library(bioacoustics)
+library(viridis)
+library(stringr)
+library(dplyr)
+library(forcats)
+
+#########################################################################################################
+Master_Folder <- "D:/Dissetation/Sounds" ## Determines the foler being work in 
+Folderlist <- list.dirs(Master_Folder, full.names = TRUE, recursive = FALSE) ##Makes list of folders within the master
+Species <- list.dirs(Master_Folder, full.names = FALSE, recursive = FALSE)
+
+##For loop to run through each folder extract the files, use the energy detection function to select the noise, create a data set
+for(folder in Folderlist){
+  
+  final <- list() ## set "folder" as a empty list
+  n = 1
+  print(folder) ## says name of folder tot ell you what its working on
+  
+  files <- list.files( ## collects all the .wav files in the selected folder
+    folder,
+    pattern = "\\.wav$",
+    full.names = TRUE, ## brings the full name
+    ignore.case = TRUE 
+  )
+  
+  
+  for (f in files) {
+    
+    ##Energy detection function to select the specific window for which the sound is happening
+    auto_find <- energy_detector(
+      files = f,
+      path = folder,
+      threshold = 30,
+      smooth = 75,
+      bp = c(0.09, 3) ## between 90 hz and 3000hz
+    )
+    
+    
+    
+    auto_find<-auto_find[auto_find$duration>=0.09,] ## removes any detections under 0.9s seconds to remove unwanted detections
+    detects_num <- nrow(auto_find) ##sets detects_num as table with length of detections found
+    
+    if (detects_num ==0 ){ ## if no detecetions move on
+      print(paste("No detections ",f))
+      next
+    }
+    
+    results_list <- vector("list", detects_num) ## make empy list called results_list
+    
+    for (d in 1:detects_num){
+      results_list[[d]] <-plot_fft(auto_find, detection = d) ## for each detection finds the dominant freq, bandwidth, amplitude, duration
+    }
+    all_results <- do.call(rbind, results_list) ##all the info returned from the function is put into one line
+    
+    assign(paste("data_", n),all_results) #names this as data_ number that adds up for each detection in the file
+    
+    n = n+1
+    
+    
+  }
+  
+  collect<-mget(ls(pattern = "data")) ## collects all the "data_...." and makes a list of all the infomation
+  rm(list = ls(pattern ="data_")) ## removes all the "data_...." files ready for the next folder
+  final<- do.call(rbind, collect)  ##adds all the info from that file into one dataset
+  assign(folder, final) ## names the file in r after the name of the folder 
+}
+
+all<-mget(ls(pattern = "D:/Dissetation/Sounds")) ## collects all the different names of the folder that have been analysed
+Complete<- do.call(rbind,all)  ##collates them all into one dataset 
+pattern <- paste(Species, collapse = "|") ## takes the name of all the individuals analysed with | between them
+Complete$Individual <- str_extract(Complete$Individual, pattern) ## changes the individual column to remove anything that doesnt match with the list above
+Complete$Species <- str_extract(Complete$Individual, pattern) ## does the same for the species column
+pattern2<-("Goby|Shanny|Wrasse")##lists the 3 species analysed
+Complete$Species <- str_extract(Complete$Species, pattern2)##remove the numbers and only leaves the names of the species
+                        
+
+## changes the name sof the species to the latin version
+Complete$Species <- fct_recode(Complete$Species,
+                               "G.paganellus" = "Goby",
+                               "L.pholis"  = "Shanny",
+                               "S.melops"  = "Wrasse")
