@@ -1,0 +1,129 @@
+
+
+
+plot_fft <- function(auto_find, detection = d,
+                   sound, start_time, end_time,
+                   wl = 2048, ovlp = 50) {
+
+library(tuneR)
+library(seewave)
+
+
+# Read the WAV file
+wav_path <- file.path( ##collects the recording from the autofind functions sound file column 
+  auto_find$sound.files[detection] # from the recording directory path choses the file with the name in the data frame
+)
+
+file<- auto_find$sound.files[detection] ##creates value of the file name currently being worked on for later entry into the data set
+wav <- readWave(wav_path) ## sets "wav" as the sound file (can be changed to contain chosen section)
+
+# Sampling rate
+sample_rate <- wav@samp.rate ##sets the variable sample rate to that of what the sample rate of "wav" now is automatically
+
+#####################################################################################################################################
+##using the detection data from the energy detection to find the start and stop positions of the noises in sample numbers
+#####################################################################################################################################
+
+
+# Detection times
+start_time <- auto_find$start[detection] ## selects the start time from the auto find file from the chosen detection row
+end_time <- auto_find$end[detection] ##elects the end time from the auto find file from the chosen detection row
+duration <- end_time-start_time
+
+# Convert time to samples //floor() is to round down what ever the value is // celling is round up whatever the value is
+start_sample <- floor(start_time * sample_rate) + 1 ## finds the start time in sample number so i knows in the nuumbers where to look as oppose to time
+end_sample <- min( 
+  ceiling(end_time * sample_rate), ## same but for the end tants the end lime in seconds and timeses it by the sample rate to find the relative sample number for r to look at later
+  length(wav) ## min() means to take either the recording caluclted as the end of the sound or the final sample taken in the recording whatever is lower
+)
+
+# Extract identified sound
+sound <- wav[start_sample:end_sample] ## select the chosen sound piece from the start ends.
+
+
+#####################################################################################################################################
+##Plots the spectrogram for the selected sound detected by the energy detector function
+#####################################################################################################################################
+
+##Plots spectrogram
+spectrogram <- seewave::spectro(  ##selects the  spectro func from the seewave package
+  sound, ##using the sound file
+  f = 44100, ##sample rate of recording
+  wl = wl, #windo length
+  ovlp = ovlp, #overlap of different windows
+  wn = "hanning", #windowing tecnique
+  plot = TRUE,           # tell r to plot it so i can see it
+  flim = c(0.09, 3),    # only plot 90 hz to 3khz
+)
+
+frequencies <- spectrogram$freq * 1000 ## changes from khz to hz by timesing by 100
+amplitude <- rowMeans(spectrogram$amp) ## calculates the row means to have one number of amplitude for each frequency
+
+#####################################################################################################################################
+
+frequencies_plot <- frequencies[frequencies >= 100 & frequencies <= 3000]  ##selects the frewquency range we want to look at from 100 hz to 3khz and creates a dataframe for plotting
+amplitude_plot <- amplitude[frequencies >= 100 & frequencies <= 3000] ##selects the amplitude values from the frewquency range we want to look at from 100 hz to 3khz and creates a dataframe for plotting
+
+
+#####################################################################################################################################
+##find the peak and the bandwidth. peak by finding highest amplitude. and the bandwidth by making the data into true - its above the 
+##threshaold and false - its below. the while loop checks as it goes either way that the data is not going pas the start on the final 
+##point and that the value is still true. if sh move another space.
+#####################################################################################################################################
+
+peak <- which.max(amplitude_plot) ## finds the positionin the data where the highest amplitude can be found using which.max() function
+max_freq <- frequencies_plot[peak] ## using the info from above to select the frequency for the highest amplitude
+max_amp <- amplitude_plot[peak] ##uses the info from above to find the amplitude that is the highest
+
+threshold <- max_amp - 3 ##sets threshold as 3 db amplitude less than the maximum amplitude in the recording
+above_threshold <- amplitude_plot >= threshold ## makes a data frame saying true or false if the amplitude if above or equal to the max - 3
+
+left <- peak ## sets left to the location of the peak (highest amplitude value in the data set)
+while (left > 1 && above_threshold[left - 1]) left <- left - 1 ## uses a while loop to check as it goes left if each piece of data is still above the threshold made above. 
+
+right <- peak
+while (right < length(above_threshold) && above_threshold[right + 1]) right <- right + 1 ## uses a while loop to check as it goes right if each piece of data is still above the threshold made above. 
+
+low_frequency <- frequencies_plot[left] ## set the point to the left for the lowest freq
+high_frequency <- frequencies_plot[right] ## sets the point to th right for the highest freq
+bandwidth <- high_frequency - low_frequency ## find the length of the gap to say bandwidth
+
+#####################################################################################################################################
+## plots the fft graph of the averaged valuse for be to check its chosing the correct sections and numbers.
+#####################################################################################################################################
+par(mfrow = c(1,1))
+
+plot(frequencies_plot,amplitude_plot,
+type = "l",
+xlab = "Frequency (Hz)",
+ylab = "Amplitude (dB)",
+main = file
+)
+
+abline(v = max_freq, lty = 2, col = "red") ## adds a line at the highest amplitude
+abline(v = c(low_frequency, high_frequency), lty = 3, col = "orange") ## adds lines for the high and low limits
+
+text(max_freq, max_amp, ## writes on the graph the value of the peak
+     paste0("Peak = ", round(max_freq), " Hz"), pos = 4) ##paste0 allows fo rthe written bit and the value to be put into one tesxt bit
+
+text(mean(c(low_frequency, high_frequency)), threshold, ## writes on the graph the band width
+     paste0("BW = ", round(bandwidth), " Hz"), pos = 3)
+
+label_spectro(wave = readWave(file), detection = auto_find, flim = c(0.09,3))
+
+
+return(data.frame(
+  detection = detection,
+  File = file,
+  Species = file,
+  Individual = file,
+  Start = start_time,
+  End = end_time,
+  Duration = duration,
+  "Fundamental freq" = max_freq,
+  Amplitude = max_amp,
+  "Min freq" = low_frequency,
+  "Max freq" = high_frequency,
+  Bandwidth = bandwidth
+))
+}
